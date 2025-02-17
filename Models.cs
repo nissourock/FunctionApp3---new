@@ -7,8 +7,18 @@ using System.Threading.Tasks;
 
 namespace FunctionApp3
 {
-    internal class Models
+    public class Models
     {
+        public class Item
+        {
+            public string? Name { get; set; }
+            public string? OperationIdentifier { get; set; }
+            public string? targetURL { get; set; }
+            public string? titleDossier { get; set; }
+            public string? modecreation { get; set; }
+           
+            public string? authorEmail { get; set; }
+        }
         public class ResponseModel<T>
         {
             [JsonProperty(PropertyName = "value")]
@@ -42,7 +52,7 @@ namespace FunctionApp3
             public string? ID { get; set; }
             public string? Title { get; set; }
 
-          
+            public string? FilRefDoc { get; set; }
             public string? CodeProjet { get; set; }
             public string? Source { get; set; }
             public string? NumeroDossier { get; set; }
