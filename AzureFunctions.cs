@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using PnP.Core.Model;
 using PnP.Core.Model.SharePoint;
@@ -18,20 +19,19 @@ using static FunctionApp3.Models;
 
 namespace FunctionApp3
 {
-    public class AppSettings
-    {
-        public string AzureFunctionBaseURL { get; set; }
-        // Add other configuration properties as needed.
-    }
+    
     public class WebhookResponder
     {
 
         private readonly ILogger<WebhookResponder> _logger;
-        private string AzureFunctionBaseURL = Environment.GetEnvironmentVariable("AzureFunctionBaseURL")?.Trim().Replace("\"", "");
+        private readonly FunctionAppSettings _settings;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public WebhookResponder(ILogger<WebhookResponder> logger) {
+
+        public WebhookResponder(IOptions<FunctionAppSettings> options, IHttpClientFactory httpClientFactory, ILogger<WebhookResponder> logger) {
             _logger = logger;
-
+            _settings = options.Value;
+            _httpClientFactory = httpClientFactory;
         }
         [Function("WebhookResponder")]
 
@@ -39,7 +39,7 @@ namespace FunctionApp3
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req) {
             _logger.LogInformation("SharePoint webhook received a request.");
 
-            string validationToken = req.Query["validationtoken"];
+            string? validationToken = req.Query["validationtoken"];
 
             // If a validation token is present, we need to respond within 5 seconds by
             // returning the given validation token. This only happens when a new
@@ -47,11 +47,11 @@ namespace FunctionApp3
             if (validationToken != null)
             {
                 _logger.LogInformation($"Validation token {validationToken} received");
-                return (ActionResult)new OkObjectResult(validationToken);
+                return (ActionResult) new OkObjectResult(validationToken);
             }
 
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var notifications = JsonConvert.DeserializeObject<ResponseModel<NotificationModel>>(requestBody).Value;
+            var notifications = JsonConvert.DeserializeObject<ResponseModel<NotificationModel>>(requestBody)?.Value;
 
             if (requestBody != null)
             {
@@ -59,9 +59,9 @@ namespace FunctionApp3
                 _logger.LogInformation($"Webhook notification received: {requestBody}");
 
                 // Example: Parse and process the notification data
-                string? siteUrl = notifications.FirstOrDefault()?.SiteUrl;
-                string? resourceId = notifications.FirstOrDefault()?.Resource;
-                string? clientstate = notifications.FirstOrDefault()?.ClientState;
+                string? siteUrl = notifications?.FirstOrDefault()?.SiteUrl;
+                string? resourceId = notifications?.FirstOrDefault()?.Resource;
+                string? clientstate = notifications?.FirstOrDefault()?.ClientState;
 
 
                 _logger.LogInformation($"Site URL: {siteUrl}, Ressource ID: {resourceId}");
@@ -70,7 +70,7 @@ namespace FunctionApp3
                 {
                     Task.Run(async () =>
                     {
-                        using (var httpClient = new HttpClient())
+                        using (var httpClient = _httpClientFactory.CreateClient())
                         {
                             var payload = new
                             {
@@ -80,7 +80,7 @@ namespace FunctionApp3
                             var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
 
-                            await httpClient.PostAsync(AzureFunctionBaseURL + "/api/DossierMaitreCreator/", content);
+                            await httpClient.PostAsync(_settings.AzureFunctionBaseURL + "/api/DossierMaitreCreator/", content);
                         }
                     });
                 }
@@ -88,7 +88,7 @@ namespace FunctionApp3
                 {
                     Task.Run(async () =>
                     {
-                        using (var httpClient = new HttpClient())
+                        using (var httpClient = _httpClientFactory.CreateClient())
                         {
                             var payload = new
                             {
@@ -98,7 +98,7 @@ namespace FunctionApp3
                             var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
 
-                            await httpClient.PostAsync(AzureFunctionBaseURL + "/api/CSVParser/", content);
+                            await httpClient.PostAsync(_settings.AzureFunctionBaseURL + "/api/CSVParser/", content);
                         }
                     });
                 }
@@ -116,35 +116,16 @@ namespace FunctionApp3
     }
     public class CSVParser
     {
-        //PPR
-        public string? siteURL = Environment.GetEnvironmentVariable("SharePoint_SiteUrl_GeostockPPR")?.Trim().Replace("\"", "");
-        public string? AzureBlobStorageConnectionString = Environment.GetEnvironmentVariable("AzureBlobStorageConnectionStringPPR")?.Trim().Replace("\"", "");
-        public string? CSVDocumentLibraryTitle = Environment.GetEnvironmentVariable("CSVDocumentLibraryTitlePPR")?.Trim().Replace("\"", "");
-
-        //PROD
-        //public string? siteURL = Environment.GetEnvironmentVariable("SharePoint_SiteUrl_GeostockPROD")?.Trim().Replace("\"", "");
-        //public string? AzureBlobStorageConnectionString = Environment.GetEnvironmentVariable("AzureBlobStorageConnectionString")?.Trim().Replace("\"", "");
-        //public string? CSVDocumentLibraryTitle = Environment.GetEnvironmentVariable("CSVDocumentLibraryTitle")?.Trim().Replace("\"", "");
-
-
-        //Indiscriminate PPR/PROD
-        public string? clientID = Environment.GetEnvironmentVariable("SharePoint_ClientID")?.Trim().Replace("\"", "");
-        public string? clientSecretID = Environment.GetEnvironmentVariable("SharePoint_ClientSecretID")?.Trim().Replace("\"", "");
-        public string? BlobContainerCSV = Environment.GetEnvironmentVariable("BlobContainerCSV")?.Trim().Replace("\"", "");
-        public string? BlobContainerList = Environment.GetEnvironmentVariable("BlobContainerList")?.Trim().Replace("\"", "");
-        public string? CreationListName = Environment.GetEnvironmentVariable("CreationListName")?.Trim().Replace("\"", "");
+       
 
         private readonly ILogger<CSVParser> _logger;
-        public static string EscapeSingleQuotes(string input) {
-            if (string.IsNullOrEmpty(input))
-            {
-                return input;
-            }
-
-            return input.Replace("'", "\\'").Replace("\"", "\\\"");
-        }
-        public CSVParser(ILogger<CSVParser> logger) {
+        private readonly FunctionAppSettings _settings;
+        private readonly ISharePointContextFactory _spContextFactory;
+       
+        public CSVParser(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<CSVParser> logger) {
+            _settings = options.Value;
             _logger = logger;
+            _spContextFactory = spContextFactory;
 
         }
         [Function("CSVParser")]
@@ -161,7 +142,7 @@ namespace FunctionApp3
             // Extract parameters from the request body
             string? siteUrl = data?.siteUrl;
             string? resourceId = data?.resourceId;
-            using (var clientContext = new AuthenticationManager().GetACSAppOnlyContext(siteURL, clientID, clientSecretID))
+            using (var clientContext = _spContextFactory.CreateClientContext(_settings.siteURL, _settings.clientID, _settings.clientSecretID))
             {
                 using (PnPContext pnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(clientContext))
                 {
@@ -177,7 +158,7 @@ namespace FunctionApp3
                     };
 
 
-                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, AzureBlobStorageConnectionString, BlobContainerCSV, _logger);
+                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV, _logger);
 
                     if (lastChangeToken != null && !String.IsNullOrEmpty(lastChangeToken))
                     {
@@ -196,7 +177,7 @@ namespace FunctionApp3
 
                     if (changes.Any())
                     {
-                        Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, AzureBlobStorageConnectionString, BlobContainerCSV, _logger);
+                        await Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV, _logger);
                     }
                     var addChangesList = changes.Where(change => change.ChangeType == PnP.Core.Model.SharePoint.ChangeType.Add).ToList();
                     await pnpCoreContext.Web.LoadAsync(p => p.SiteUsers);
@@ -315,20 +296,20 @@ namespace FunctionApp3
                                                     var departement = record.departement;
 
                                                     //metadonnées gérées
-                                                    var specialiteMetier = EscapeSingleQuotes(record.specialiteMetier);
-                                                    var typeDeDocument = EscapeSingleQuotes(record.typeDeDocument);
+                                                    var specialiteMetier = Services.EscapeSingleQuotes(record.specialiteMetier);
+                                                    var typeDeDocument = Services.EscapeSingleQuotes(record.typeDeDocument);
 
-                                                    var Description = EscapeSingleQuotes(record.Description);
-                                                    var activite = EscapeSingleQuotes(record.activite);
-                                                    var bibliothequeCible = EscapeSingleQuotes(record.bibliothequeCible);
+                                                    var Description = Services.EscapeSingleQuotes(record.Description);
+                                                    var activite = Services.EscapeSingleQuotes(record.activite);
+                                                    var bibliothequeCible = Services.EscapeSingleQuotes(record.bibliothequeCible);
 
-                                                    var langue = EscapeSingleQuotes(record.langue);
-                                                    var phaseEtude = EscapeSingleQuotes(record.phaseEtude);
+                                                    var langue = Services.EscapeSingleQuotes(record.langue);
+                                                    var phaseEtude = Services.EscapeSingleQuotes(record.phaseEtude);
 
                                                     var nombrePage = record.nombrePage;
                                                     var nombreAnnexes = record.nombreAnnexes;
                                                     var DateSouhaitee = record.DateSouhaitee;
-                                                    var Etat = EscapeSingleQuotes(record.Etat);
+                                                    var Etat = Services.EscapeSingleQuotes(record.Etat);
 
                                                     // traitement des lookups
 
@@ -415,28 +396,16 @@ namespace FunctionApp3
     }
     public class DossierMaitreCreator
     {
-        //PPR
-        public string? siteURL = Environment.GetEnvironmentVariable("SharePoint_SiteUrl_GeostockPPR")?.Trim().Replace("\"", "");
-        public string? AzureBlobStorageConnectionString = Environment.GetEnvironmentVariable("AzureBlobStorageConnectionStringPPR")?.Trim().Replace("\"", "");
-        public string? CSVDocumentLibraryTitle = Environment.GetEnvironmentVariable("CSVDocumentLibraryTitlePPR")?.Trim().Replace("\"", "");
-
-        //PROD
-        //public string? siteURL = Environment.GetEnvironmentVariable("SharePoint_SiteUrl_GeostockPROD")?.Trim().Replace("\"", "");
-        //public string? AzureBlobStorageConnectionString = Environment.GetEnvironmentVariable("AzureBlobStorageConnectionString")?.Trim().Replace("\"", "");
-        //public string? CSVDocumentLibraryTitle = Environment.GetEnvironmentVariable("CSVDocumentLibraryTitle")?.Trim().Replace("\"", "");
-
-
-        //Indiscriminate PPR/PROD
-        public string? clientID = Environment.GetEnvironmentVariable("SharePoint_ClientID")?.Trim().Replace("\"", "");
-        public string? clientSecretID = Environment.GetEnvironmentVariable("SharePoint_ClientSecretID")?.Trim().Replace("\"", "");
-        public string? BlobContainerCSV = Environment.GetEnvironmentVariable("BlobContainerCSV")?.Trim().Replace("\"", "");
-        public string? BlobContainerList = Environment.GetEnvironmentVariable("BlobContainerList")?.Trim().Replace("\"", "");
-        public string? CreationListName = Environment.GetEnvironmentVariable("CreationListName")?.Trim().Replace("\"", "");
+       
 
         private readonly ILogger<DossierMaitreCreator> _logger;
+        private readonly FunctionAppSettings _settings;
+        private readonly ISharePointContextFactory _spContextFactory;
 
-        public DossierMaitreCreator(ILogger<DossierMaitreCreator> logger) {
+        public DossierMaitreCreator(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<DossierMaitreCreator> logger) {
+            _settings = options.Value;
             _logger = logger;
+            _spContextFactory = spContextFactory;
         }
 
         [Function("DossierMaitreCreator")]
@@ -456,7 +425,7 @@ namespace FunctionApp3
 
             string? resourceId = data?.resourceId;
             _logger.LogInformation($"Ressource ID: {resourceId}");
-            using (var clientContext = new AuthenticationManager().GetACSAppOnlyContext(siteURL, clientID, clientSecretID))
+            using (var clientContext = _spContextFactory.CreateClientContext(_settings.siteURL, _settings.clientID, _settings.clientSecretID))
             {
                 using (PnPContext pnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(clientContext))
                 {
@@ -473,13 +442,8 @@ namespace FunctionApp3
                     List<dynamic?> results = new List<dynamic?>();
 
                     //Use this for faster testing 
-                    // var result =  await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 13, targetList, _logger);
-                    //var result2 = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 268, targetList, _logger);
-                    //var result3 = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 262, targetList, _logger);
-
-
-
-                     //var result4 = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 743, targetList, _logger);
+                    
+                    // var result4 = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 743, targetList, _settings.deploymentEnv, _logger);
 
 
 
@@ -533,7 +497,7 @@ namespace FunctionApp3
                     };
 
 
-                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, AzureBlobStorageConnectionString, BlobContainerList, _logger);
+                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList, _logger);
 
                     if (lastChangeToken != null && !String.IsNullOrEmpty(lastChangeToken))
                     {
@@ -547,7 +511,7 @@ namespace FunctionApp3
 
                     if (changes.Any())
                     {
-                        Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, AzureBlobStorageConnectionString, BlobContainerList, _logger);
+                        await Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList, _logger);
                     }
                     var addChangesList = changes.Where(change => change.ChangeType == PnP.Core.Model.SharePoint.ChangeType.Add).ToList();
                     if (addChangesList.Count > 0)
@@ -558,7 +522,7 @@ namespace FunctionApp3
                             {
                                 if (changeItem.IsPropertyAvailable<IChangeItem>(i => i.ItemId))
                                 {
-                                    var resultAsync = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, changeItem.ItemId, targetList, _logger);
+                                    var resultAsync = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, changeItem.ItemId, targetList,_settings.deploymentEnv,  _logger);
                                     results.Add(resultAsync);
 
                                 }

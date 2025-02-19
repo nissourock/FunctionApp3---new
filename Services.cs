@@ -35,7 +35,16 @@ namespace FunctionApp3
             // Replace the part after the last meaningful slash
             return trimmedInput.Substring(0, lastSlashIndex + 1) + replacement;
         }
-        public static async Task<dynamic?> DossierMaitreCreation(ClientContext clientContext, PnPContext pnpCoreContext, int itemID, PnP.Core.Model.SharePoint.IList targetList, Microsoft.Extensions.Logging.ILogger _logger)
+
+        public static string EscapeSingleQuotes(string input) {
+            if (string.IsNullOrEmpty(input))
+            {
+                return input;
+            }
+
+            return input.Replace("'", "\\'").Replace("\"", "\\\"");
+        }
+        public static async Task<dynamic?> DossierMaitreCreation(ClientContext clientContext, PnPContext pnpCoreContext, int itemID, PnP.Core.Model.SharePoint.IList targetList,string deploymentEnv, Microsoft.Extensions.Logging.ILogger _logger)
         {
 
             try
@@ -47,7 +56,8 @@ namespace FunctionApp3
                     var ListName = item.Values["ListName"]?.ToString();
                     var pays = item.Values["FolderPathDestination"]?.ToString();
                     //ppr 
-                    var statutWebhook = item.Values["Statut_x0020_webhook"]?.ToString(); 
+                    var statutWebhookColumnName = deploymentEnv == "PROD" ? "Statutwebhook" : "Statut_x0020_webhook";
+                    var statutWebhook = item.Values[statutWebhookColumnName]?.ToString(); 
                     //prod
                     //var statutWebhook = item.Values["Statutwebhook"]?.ToString();
                     
@@ -59,7 +69,7 @@ namespace FunctionApp3
 
 
                     //item["Statutwebhook"] = "Création en cours";
-                    item["Statut_x0020_webhook"] = "Création en cours";
+                    item[statutWebhookColumnName] = "Création en cours";
 
 
                     await item.UpdateAsync();
@@ -1064,7 +1074,7 @@ namespace FunctionApp3
                             //Prod statut webhook
                           // item["Statutwebhook"] = "Crée";
                             //PPR statut webhook
-                            item["Statut_x0020_webhook"] = "Crée";
+                            item[statutWebhookColumnName] = "Crée";
                             await item.UpdateAsync();
                             _logger.LogInformation($"Item status updated to created in og list");
                             if(isModified == true) { targetUrl2 = targetUrl2.Substring(0, targetUrl2.LastIndexOf('/') + 1) + title; }

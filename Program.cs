@@ -1,43 +1,128 @@
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore;
+using Microsoft.Azure.Functions.Worker.Configuration; // Needed for ConfigureFunctionsWorkerDefaults()
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-
-// Define your configuration class
-
+using Microsoft.Extensions.Options;
+using System;
+using System.Linq;
 
 var host = new HostBuilder()
-     .ConfigureAppConfiguration((hostingContext, config) =>
-     {
-         // Set the base path for configuration files
-         config.SetBasePath(Environment.CurrentDirectory);
-         // Load local settings (this file is used locally; in Azure, environment variables take precedence)
-         config.AddJsonFile("local.settings.json", optional: true, reloadOnChange: true);
-         // Also add environment variables so that they override if present
-         config.AddEnvironmentVariables();
-     })
-    .ConfigureFunctionsWebApplication()
-    .ConfigureServices(services =>
+    .ConfigureAppConfiguration((context, config) =>
     {
+        // Set base path and add configuration sources.
+        config.SetBasePath(Environment.CurrentDirectory)
+              .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
+              .AddEnvironmentVariables();
+    })
+    // This extension method registers the Functions worker defaults for the isolated model.
+    .ConfigureFunctionsWebApplication()
+    .ConfigureServices((context, services) =>
+    {
+        // Register our custom settings options using our custom setup class.
+        services.ConfigureOptions<FunctionAppSettingsSetup>();
+
+        // Register HttpClientFactory.
+        services.AddHttpClient();
+
+        // Register the SharePoint context factory.
+        services.AddSingleton<ISharePointContextFactory, SharePointContextFactory>();
+
+        // Register Application Insights telemetry.
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
+
+        // Adjust logging filter options so that lower-level logs are captured.
         services.Configure<LoggerFilterOptions>(options =>
         {
-            // The Application Insights SDK adds a default logging filter that instructs ILogger to capture only Warning and more severe logs. Application Insights requires an explicit override.
-            // Log levels can also be configured using appsettings.json. For more information, see https://learn.microsoft.com/en-us/azure/azure-monitor/app/worker-service#ilogger-logs
-            LoggerFilterRule? toRemove = options.Rules.FirstOrDefault(rule => rule.ProviderName
-                == "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider");
-
-            if (toRemove is not null)
+            var rule = options.Rules.FirstOrDefault(r =>
+                r.ProviderName == "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider");
+            if (rule is not null)
             {
-                options.Rules.Remove(toRemove);
+                options.Rules.Remove(rule);
             }
         });
     })
     .Build();
 
-
-
 host.Run();
+
+
+// ----------------------------
+// Settings Classes & Setup
+// ----------------------------
+
+public class FunctionAppSettings
+{
+    // Environment-specific settings.
+    public required string siteURL { get; set; }
+    public required string AzureBlobStorageConnectionString { get; set; }
+    public required string CSVDocumentLibraryTitle { get; set; }
+
+    // Indiscriminate settings (same for both environments).
+    public required string clientID { get; set; }
+    public required string clientSecretID { get; set; }
+    public required string BlobContainerCSV { get; set; }
+    public required string BlobContainerList { get; set; }
+    public required string CreationListName { get; set; }
+    public required string AzureFunctionBaseURL { get; set; }
+
+    public required string deploymentEnv { get; set; }
+}
+
+public class FunctionAppSettingsSetup : IConfigureOptions<FunctionAppSettings>
+{
+    private readonly IConfiguration _configuration;
+    public FunctionAppSettingsSetup(IConfiguration configuration) {
+        _configuration = configuration;
+    }
+    public void Configure(FunctionAppSettings options) {
+        // Read DEPLOYMENT_ENV to choose between PPR and PROD (defaults to "PPR").
+        string deploymentEnv = Environment.GetEnvironmentVariable("DEPLOYMENT_ENV") ?? "PPR";
+
+        if (deploymentEnv.Equals("PROD", StringComparison.OrdinalIgnoreCase))
+        {
+            options.siteURL = _configuration["SharePoint_SiteUrl_GeostockPROD"]?.Trim().Replace("\"", "");
+            options.AzureBlobStorageConnectionString = _configuration["AzureBlobStorageConnectionString"]?.Trim().Replace("\"", "");
+            options.CSVDocumentLibraryTitle = _configuration["CSVDocumentLibraryTitle"]?.Trim().Replace("\"", "");
+        }
+        else
+        {
+            options.siteURL = _configuration["SharePoint_SiteUrl_GeostockPPR"]?.Trim().Replace("\"", "");
+            options.AzureBlobStorageConnectionString = _configuration["AzureBlobStorageConnectionStringPPR"]?.Trim().Replace("\"", "");
+            options.CSVDocumentLibraryTitle = _configuration["CSVDocumentLibraryTitlePPR"]?.Trim().Replace("\"", "");
+        }
+
+        // Indiscriminate settings.
+        options.clientID = _configuration["SharePoint_ClientID"]?.Trim().Replace("\"", "");
+        options.clientSecretID = _configuration["SharePoint_ClientSecretID"]?.Trim().Replace("\"", "");
+        options.BlobContainerCSV = _configuration["BlobContainerCSV"]?.Trim().Replace("\"", "");
+        options.BlobContainerList = _configuration["BlobContainerList"]?.Trim().Replace("\"", "");
+        options.CreationListName = _configuration["CreationListName"]?.Trim().Replace("\"", "");
+        options.AzureFunctionBaseURL = _configuration["AzureFunctionBaseURL"]?.Trim().Replace("\"", "");
+        options.deploymentEnv = deploymentEnv;
+
+
+    }
+}
+
+// -----------------------------
+// SharePoint Context Factory
+// -----------------------------
+public interface ISharePointContextFactory
+{
+    /// <summary>
+    /// Creates a SharePoint ClientContext using app-only authentication.
+    /// </summary>
+    Microsoft.SharePoint.Client.ClientContext CreateClientContext(string siteUrl, string clientId, string clientSecret);
+}
+
+public class SharePointContextFactory : ISharePointContextFactory
+{
+    public Microsoft.SharePoint.Client.ClientContext CreateClientContext(string siteUrl, string clientId, string clientSecret) {
+        // Use PnP.Framework's AuthenticationManager to obtain a ClientContext.
+        return new PnP.Framework.AuthenticationManager().GetACSAppOnlyContext(siteUrl, clientId, clientSecret);
+    }
+}
