@@ -121,12 +121,13 @@ namespace FunctionApp3
         private readonly ILogger<CSVParser> _logger;
         private readonly FunctionAppSettings _settings;
         private readonly ISharePointContextFactory _spContextFactory;
-       
-        public CSVParser(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<CSVParser> logger) {
+        private readonly IServices _services;
+
+        public CSVParser(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<CSVParser> logger, IServices services) {
             _settings = options.Value;
             _logger = logger;
             _spContextFactory = spContextFactory;
-
+            _services = services;
         }
         [Function("CSVParser")]
 
@@ -158,7 +159,7 @@ namespace FunctionApp3
                     };
 
 
-                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV, _logger);
+                    var lastChangeToken = await _services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV);
 
                     if (lastChangeToken != null && !String.IsNullOrEmpty(lastChangeToken))
                     {
@@ -177,7 +178,7 @@ namespace FunctionApp3
 
                     if (changes.Any())
                     {
-                        await Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV, _logger);
+                        await _services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerCSV);
                     }
                     var addChangesList = changes.Where(change => change.ChangeType == PnP.Core.Model.SharePoint.ChangeType.Add).ToList();
                     await pnpCoreContext.Web.LoadAsync(p => p.SiteUsers);
@@ -256,31 +257,31 @@ namespace FunctionApp3
                                                     //traitement des personnes 
                                                     if (!string.IsNullOrEmpty(emetteursList))
                                                     {
-                                                        emetteursListProcessed = Services.FormatEmails(emetteursList, prefix, _logger);
+                                                        emetteursListProcessed = _services.FormatEmails(emetteursList, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(verificateursList))
                                                     {
-                                                        verificateursListProcessed = Services.FormatEmails(verificateursList, prefix, _logger);
+                                                        verificateursListProcessed = _services.FormatEmails(verificateursList, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(approbateursList))
                                                     {
-                                                        approbateursListProcessed = Services.FormatEmails(approbateursList, prefix, _logger);
+                                                        approbateursListProcessed = _services.FormatEmails(approbateursList, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(chef))
                                                     {
-                                                        chefProcessed = Services.FormatEmails(chef, prefix, _logger);
+                                                        chefProcessed = _services.FormatEmails(chef, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(secretaire))
                                                     {
-                                                        secretaireProcessed = Services.FormatEmails(secretaire, prefix, _logger);
+                                                        secretaireProcessed = _services.FormatEmails(secretaire, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(intervenantPAOProcessed))
                                                     {
-                                                        intervenantPAOProcessed = Services.FormatEmails(intervenantPAOProcessed, prefix, _logger);
+                                                        intervenantPAOProcessed = _services.FormatEmails(intervenantPAOProcessed, prefix);
                                                     }
                                                     if (!string.IsNullOrEmpty(intervenantTTXProcessed))
                                                     {
-                                                        intervenantTTXProcessed = Services.FormatEmails(intervenantTTXProcessed, prefix, _logger);
+                                                        intervenantTTXProcessed = _services.FormatEmails(intervenantTTXProcessed, prefix);
                                                     }
 
 
@@ -296,20 +297,20 @@ namespace FunctionApp3
                                                     var departement = record.departement;
 
                                                     //metadonnées gérées
-                                                    var specialiteMetier = Services.EscapeSingleQuotes(record.specialiteMetier);
-                                                    var typeDeDocument = Services.EscapeSingleQuotes(record.typeDeDocument);
+                                                    var specialiteMetier = _services.EscapeSingleQuotes(record.specialiteMetier);
+                                                    var typeDeDocument = _services.EscapeSingleQuotes(record.typeDeDocument);
 
-                                                    var Description = Services.EscapeSingleQuotes(record.Description);
-                                                    var activite = Services.EscapeSingleQuotes(record.activite);
-                                                    var bibliothequeCible = Services.EscapeSingleQuotes(record.bibliothequeCible);
+                                                    var Description = _services.EscapeSingleQuotes(record.Description);
+                                                    var activite = _services.EscapeSingleQuotes(record.activite);
+                                                    var bibliothequeCible = _services.EscapeSingleQuotes(record.bibliothequeCible);
 
-                                                    var langue = Services.EscapeSingleQuotes(record.langue);
-                                                    var phaseEtude = Services.EscapeSingleQuotes(record.phaseEtude);
+                                                    var langue = _services.EscapeSingleQuotes(record.langue);
+                                                    var phaseEtude = _services.EscapeSingleQuotes(record.phaseEtude);
 
                                                     var nombrePage = record.nombrePage;
                                                     var nombreAnnexes = record.nombreAnnexes;
                                                     var DateSouhaitee = record.DateSouhaitee;
-                                                    var Etat = Services.EscapeSingleQuotes(record.Etat);
+                                                    var Etat = _services.EscapeSingleQuotes(record.Etat);
 
                                                     // traitement des lookups
 
@@ -324,34 +325,34 @@ namespace FunctionApp3
 
                                                     if (!string.IsNullOrEmpty(client))
                                                     {
-                                                        clientIDs = Services.GetItemIdsBySiteTitles(clientContext, "Clients", client, "Nom_x0020_Client",  _logger);
+                                                        clientIDs = _services.GetItemIdsBySiteTitles(clientContext, "Clients", client, "Nom_x0020_Client");
                                                     }
 
                                                     if (!string.IsNullOrEmpty(projet))
                                                     {
-                                                        projetID = Services.GetItemIdsBySiteTitles(clientContext, "Codes Projets", projet, "Libell_x00e9_", _logger);
+                                                        projetID = _services.GetItemIdsBySiteTitles(clientContext, "Codes Projets", projet, "Libell_x00e9_");
                                                     }
 
 
                                                     if (!string.IsNullOrEmpty(DossierPays))
                                                     {
-                                                        paysID = Services.GetItemIdsBySiteTitles(clientContext, "Codes Pays", DossierPays, "Libell_x00e9_", _logger);
+                                                        paysID = _services.GetItemIdsBySiteTitles(clientContext, "Codes Pays", DossierPays, "Libell_x00e9_");
                                                     }
                                                     if (!string.IsNullOrEmpty(sites))
                                                     {
-                                                        sitesID = Services.GetItemIdsBySiteTitles(clientContext, "Liste des Sites", sites, "Site", _logger);
+                                                        sitesID = _services.GetItemIdsBySiteTitles(clientContext, "Liste des Sites", sites, "Site");
                                                     }
                                                     if (!string.IsNullOrEmpty(motsCles))
                                                     {
-                                                        motsClesIDs = Services.GetItemIdsBySiteTitles(clientContext, "Mots-Clés", motsCles, "Title", _logger);
+                                                        motsClesIDs = _services.GetItemIdsBySiteTitles(clientContext, "Mots-Clés", motsCles, "Title");
                                                     }
                                                     if (!string.IsNullOrEmpty(societe))
                                                     {
-                                                        societeIDs = Services.GetItemIdsBySiteTitles(clientContext, "Société", societe, "Title", _logger);
+                                                        societeIDs = _services.GetItemIdsBySiteTitles(clientContext, "Société", societe, "Title");
                                                     }
                                                     if (!string.IsNullOrEmpty(departement))
                                                     {
-                                                        departementIDs = Services.GetItemIdsBySiteTitles(clientContext, "Departements", departement, "Libell_x00e9_", _logger);
+                                                        departementIDs = _services.GetItemIdsBySiteTitles(clientContext, "Departements", departement, "Libell_x00e9_");
                                                     }
 
 
@@ -396,16 +397,16 @@ namespace FunctionApp3
     }
     public class DossierMaitreCreator
     {
-       
-
         private readonly ILogger<DossierMaitreCreator> _logger;
         private readonly FunctionAppSettings _settings;
         private readonly ISharePointContextFactory _spContextFactory;
+        private readonly IServices _services;
 
-        public DossierMaitreCreator(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<DossierMaitreCreator> logger) {
+        public DossierMaitreCreator(IOptions<FunctionAppSettings> options, ISharePointContextFactory spContextFactory, ILogger<DossierMaitreCreator> logger, IServices services) {
             _settings = options.Value;
             _logger = logger;
             _spContextFactory = spContextFactory;
+            _services = services;
         }
 
         [Function("DossierMaitreCreator")]
@@ -443,7 +444,7 @@ namespace FunctionApp3
 
                     //Use this for faster testing 
                     
-                    // var result4 = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, 743, targetList, _settings.deploymentEnv, _logger);
+                     var result4 = await _services.DossierMaitreCreation(clientContext, pnpCoreContext,511, targetList, _settings.deploymentEnv);
 
 
 
@@ -497,7 +498,7 @@ namespace FunctionApp3
                     };
 
 
-                    var lastChangeToken = await Services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList, _logger);
+                    var lastChangeToken = await _services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList);
 
                     if (lastChangeToken != null && !String.IsNullOrEmpty(lastChangeToken))
                     {
@@ -511,7 +512,7 @@ namespace FunctionApp3
 
                     if (changes.Any())
                     {
-                        await Services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList, _logger);
+                        await _services.SaveLatestChangeTokenAsync(changes.Last().ChangeToken, resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList);
                     }
                     var addChangesList = changes.Where(change => change.ChangeType == PnP.Core.Model.SharePoint.ChangeType.Add).ToList();
                     if (addChangesList.Count > 0)
@@ -522,7 +523,7 @@ namespace FunctionApp3
                             {
                                 if (changeItem.IsPropertyAvailable<IChangeItem>(i => i.ItemId))
                                 {
-                                    var resultAsync = await Services.DossierMaitreCreation(clientContext, pnpCoreContext, changeItem.ItemId, targetList,_settings.deploymentEnv,  _logger);
+                                    var resultAsync = await _services.DossierMaitreCreation(clientContext, pnpCoreContext, changeItem.ItemId, targetList,_settings.deploymentEnv);
                                     results.Add(resultAsync);
 
                                 }
@@ -541,7 +542,7 @@ namespace FunctionApp3
                             ? (object)group.ToList() // Group with more than one item
                             : (object)new List<dynamic> { group.First() }) // Single item in a list
                     .ToList();
-                        try { Services.Mailer2(clientContext, pnpCoreContext, groupedItemsAsync, singleItemsAsync, _logger); }
+                        try { _services.Mailer(clientContext, pnpCoreContext, groupedItemsAsync, singleItemsAsync); }
                         catch (Exception ex)
                         {
                             Console.WriteLine("Email send unsuccessful");

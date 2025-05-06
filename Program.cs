@@ -1,13 +1,10 @@
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore;
-using Microsoft.Azure.Functions.Worker.Configuration; // Needed for ConfigureFunctionsWorkerDefaults()
+using Microsoft.Azure.Functions.Worker; // Needed for ConfigureFunctionsWorkerDefaults()
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System;
-using System.Linq;
+using FunctionApp3;
 
 var host = new HostBuilder()
     .ConfigureAppConfiguration((context, config) =>
@@ -23,12 +20,13 @@ var host = new HostBuilder()
     {
         // Register our custom settings options using our custom setup class.
         services.ConfigureOptions<FunctionAppSettingsSetup>();
-
+        var anis = context.HostingEnvironment;
         // Register HttpClientFactory.
         services.AddHttpClient();
 
         // Register the SharePoint context factory.
         services.AddSingleton<ISharePointContextFactory, SharePointContextFactory>();
+        services.AddSingleton<IServices, Services>();
 
         // Register Application Insights telemetry.
         services.AddApplicationInsightsTelemetryWorkerService();

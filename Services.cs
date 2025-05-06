@@ -18,9 +18,30 @@ using Microsoft.AspNetCore.JsonPatch.Internal;
 
 namespace FunctionApp3
 {
-    public class Services
+    public interface IServices
     {
-        public static string ReplaceLastPart(string input, string replacement)
+        string ReplaceLastPart(string input, string replacement);
+        string EscapeSingleQuotes(string input);
+        Task<dynamic?> DossierMaitreCreation(ClientContext clientContext, PnPContext pnpCoreContext, int itemID, PnP.Core.Model.SharePoint.IList targetList, string deploymentEnv);
+        Task SaveLatestChangeTokenAsync(IChangeToken changeToken, string resource, string blobConnection, string container);
+        string FormatEmails(string emailList, string prefix);
+        string GetItemIdsBySiteTitles(ClientContext context, string listTitle, string values, string columnName);
+        string GetPaysIDFromProjet(ClientContext context, string listTitle, int? ProjetID);
+        Task<string> GetLatestChangeTokenAsync(string resource, string blobConnection, string container);
+        void Mailer(ClientContext context, PnPContext pnpContext, dynamic groupedItems, dynamic singleItems);
+    }
+
+    public class Services : IServices
+    {
+
+        private readonly ILogger<Services> _logger;
+
+        public Services(ILogger<Services> logger) {
+            _logger = logger;
+        }
+
+
+        public string ReplaceLastPart(string input, string replacement)
         {
             // Remove trailing slash if it exists
             string trimmedInput = input.TrimEnd('/');
@@ -36,7 +57,7 @@ namespace FunctionApp3
             return trimmedInput.Substring(0, lastSlashIndex + 1) + replacement;
         }
 
-        public static string EscapeSingleQuotes(string input) {
+        public string EscapeSingleQuotes(string input) {
             if (string.IsNullOrEmpty(input))
             {
                 return input;
@@ -44,7 +65,7 @@ namespace FunctionApp3
 
             return input.Replace("'", "\\'").Replace("\"", "\\\"");
         }
-        public static async Task<dynamic?> DossierMaitreCreation(ClientContext clientContext, PnPContext pnpCoreContext, int itemID, PnP.Core.Model.SharePoint.IList targetList,string deploymentEnv, Microsoft.Extensions.Logging.ILogger _logger)
+        public async Task<dynamic?> DossierMaitreCreation(ClientContext clientContext, PnPContext pnpCoreContext, int itemID, PnP.Core.Model.SharePoint.IList targetList,string deploymentEnv)
         {
 
             try
@@ -351,21 +372,6 @@ namespace FunctionApp3
                             // An error of type file already exists means the user intended modification, so we delete the original file and create a new one with the initial props and modified ones 
                             //(when the user modifies an element, a new entry is created in the dossier maitres création list and it contains all props )
 
-                            //var errorObject = e.GetType().GetProperty("Error")?.GetValue(e);
-                            //var errorMessage = errorObject?.GetType().GetProperty("Message")?.GetValue(errorObject) as string;
-                            //if(errorMessage == "The destination file already exists.") {
-                            //    var documentSetFoldertoDelete = pnpCoreContext.Web.GetFolderByServerRelativeUrl(targetUrl2);
-                            //    documentSetFoldertoDelete.Delete();
-                            //    clientContext.ExecuteQuery();
-                            //    // the file is flagged as modified so as to send the correct email later on 
-                            //    isModified = true;
-                            //    sourceFolder2.CopyTo(targetUrl2, new PnP.Core.Model.SharePoint.MoveCopyOptions
-                            //    {
-                            //        KeepBoth = false,
-                            //        RetainEditorAndModifiedOnMove = true,
-                            //    });
-                            //}
-
                             _logger.LogError(e.ToString());
                             
                             isModified = true;
@@ -411,12 +417,18 @@ namespace FunctionApp3
                                 {
                                     copiedDocumentSetListItem["DocumentSetDescription"] = description;
                                 }
-
+                                if(dossierProjet != null)
+                                { copiedDocumentSetListItem["FolderPath"] = dossierProjet; }
+try {copiedDocumentSetListItem.SystemUpdate();
+                                _logger.LogInformation($"Secretaire OK");
+                                }
+                                catch (Exception e) { _logger.LogError(e.ToString()); }
                             }
 
                             if (ListName == "Production de documents")
                             {
-
+                                if (dossierProjet != null)
+                                { copiedDocumentSetListItem["FolderPath"] = dossierProjet; }
                                 //  numeroDossier  "Num_x00e9_ro_x0020_Dossier" //form
                                 if (activite != null) { copiedDocumentSetListItem["Activit_x00e9_"] = activite; }
 
@@ -451,6 +463,12 @@ namespace FunctionApp3
                                     copiedDocumentSetListItem["Phase_x0020_d_x0027__x00e9_tude"] = phaseEtude;
                                 }
                                 //  phaseEtude "Phase_x0020_d_x0027__x00e9_tude"
+                                try
+                                {
+                                    copiedDocumentSetListItem.SystemUpdate();
+                                    _logger.LogInformation($"Secretaire OK");
+                                }
+                                catch (Exception e) { _logger.LogError(e.ToString()); }
 
                             }
 
@@ -467,7 +485,13 @@ namespace FunctionApp3
                                 { copiedDocumentSetListItem["Biblioth_x00e8_que_x0020_Cible"] = bibliotheque; }
                               
                                 if (langue != null) { copiedDocumentSetListItem["Langue"] = langue; }
-                                
+
+                                try
+                                {
+                                    copiedDocumentSetListItem.SystemUpdate();
+                                    _logger.LogInformation($"Secretaire OK");
+                                }
+                                catch (Exception e) { _logger.LogError(e.ToString()); }
 
                             }
 
@@ -480,7 +504,15 @@ namespace FunctionApp3
                                 {
                                     copiedDocumentSetListItem["Activit_x00e9_"] = activite;
                                 }
-                            };
+
+                                try
+                                {
+                                    copiedDocumentSetListItem.SystemUpdate();
+                                    _logger.LogInformation($"Secretaire OK");
+                                }
+                                catch (Exception e) { _logger.LogError(e.ToString()); }
+                            }
+                            ;
 
                             CSOMlistItem.RefreshLoad();
                             clientContext.ExecuteQuery();
@@ -511,7 +543,7 @@ namespace FunctionApp3
                                     {
                                         var paysValue = pays.Replace("/", "");
                                         //We use this helper method to get the "code pays" ID by providing the pays intitulé
-                                        var paysID = Services.GetItemIdsBySiteTitles(clientContext, "Codes Pays", paysValue, "Libell_x00e9_", _logger);
+                                        var paysID = GetItemIdsBySiteTitles(clientContext, "Codes Pays", paysValue, "Libell_x00e9_");
                                         CSOMlistItem["CodePaysd"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)Int32.Parse(paysID) };
                                         CSOMlistItem.SystemUpdate();
                                         clientContext.ExecuteQuery();
@@ -525,7 +557,7 @@ namespace FunctionApp3
                                 {
                                     try
                                     {
-                                        var paysID = Services.GetItemIdsBySiteTitles(clientContext, "Codes Pays", pays.Replace("/", ""), "Libell_x00e9_",_logger);
+                                        var paysID = GetItemIdsBySiteTitles(clientContext, "Codes Pays", pays.Replace("/", ""), "Libell_x00e9_");
                                         CSOMlistItem["CodePayscd"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)Int32.Parse(paysID) };
                                         CSOMlistItem.SystemUpdate();
                                         clientContext.ExecuteQuery();
@@ -563,10 +595,10 @@ namespace FunctionApp3
                                         if (ListName == "Hors livrables"| ListName == "Production de documents")
                                         {
                                             //We use this helper method to get the "code pays" ID by providing the pays intitulé
-                                            var paysFromProjet = Services.GetPaysIDFromProjet(clientContext, "Codes Projets", codeProjet, _logger);
+                                            var paysFromProjet = GetPaysIDFromProjet(clientContext, "Codes Projets", codeProjet);
                                             
                                             //We use this helper method to get the "code pays" ID by providing the pays intitulé
-                                            var paysID = Services.GetItemIdsBySiteTitles(clientContext, "Codes Pays", paysFromProjet, "Libell_x00e9_", _logger);
+                                            var paysID = GetItemIdsBySiteTitles(clientContext, "Codes Pays", paysFromProjet, "Libell_x00e9_");
 
                                             var formValuesPaysHorslivrables = new List<ListItemFormUpdateValue>
                                                                                      {
@@ -632,9 +664,7 @@ namespace FunctionApp3
 
                                 else
                                 {
-                                    //(copiedDocumentSetListItem["Soci_x00e9_t_x00e9_"] as IFieldLookupValue).LookupId = (int)societe;
-                                    //copiedDocumentSetListItem.Update();
-                                    //CSOMlistItem["Soci_x00e9_t_x00e9_"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)societe };
+                                    
                                     var SocieteFormValues = new List<ListItemFormUpdateValue>
                                                                                      {
                                                                             new ListItemFormUpdateValue() { FieldName = "Soci_x00e9_t_x00e9_" ,FieldValue= societe.ToString()+"#UGS"}
@@ -679,15 +709,11 @@ namespace FunctionApp3
                                 if (ListName == "Anciens Livrables" | ListName == "Hors livrables")
                                 {
                                     CSOMlistItem["CodeProjetd"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)codeProjet };
-
-
                                 }
                                 else
                                 {
 
                                     CSOMlistItem["CodeProjet"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)codeProjet };
-
-
 
                                     CSOMlistItem["CodeProjetd"] = new Microsoft.SharePoint.Client.FieldLookupValue { LookupId = (int)codeProjet };
 
@@ -741,7 +767,7 @@ namespace FunctionApp3
                                 };
                             }
 
-                            if (siteList.Length > 0)
+                            if (siteList?.Length > 0)
                             {
                                 CSOMlistItem.RefreshLoad();
 
@@ -777,7 +803,7 @@ namespace FunctionApp3
                                 }
                                 catch (Exception e) { _logger.LogError(e.ToString()); }
                             }
-                            if (motsCles.Length > 0)
+                            if (motsCles?.Length > 0)
                             {
 
                                 CSOMlistItem.RefreshLoad();
@@ -862,7 +888,7 @@ namespace FunctionApp3
                             }
                             try
                             {
-                                foreach (string verificateur in verificateursList)
+                                foreach (string? verificateur in verificateursList)
                                 {
                                     await pnpCoreContext.Web.LoadAsync(p => p.SiteUsers.QueryProperties(i => i.Mail));
 
@@ -920,8 +946,7 @@ namespace FunctionApp3
                             try
                             {
                                 await pnpCoreContext.Web.LoadAsync(p => p.SiteUsers.QueryProperties(i => i.Mail));
-                                //copiedDocumentSetListItem.SystemUpdate();
-                                //await copiedDocumentSetItemToRename.SystemUpdateAsync();
+                               
                             }
                             catch (Exception e) { _logger.LogError(e.ToString()); }
 
@@ -932,8 +957,7 @@ namespace FunctionApp3
                                 CSOMlistItem.RefreshLoad();
                                 clientContext.ExecuteQuery();
                                 var creatorEmail = await pnpCoreContext.Web.EnsureUserAsync(UserEmail);
-                                //copiedDocumentSetListItem["Author"] = new PnP.Core.Model.SharePoint.FieldUserValue(creatorEmail);
-                                //copiedDocumentSetListItem["Editor"] = new PnP.Core.Model.SharePoint.FieldUserValue(creatorEmail);
+                              
 
                                 CSOMlistItem["Author"] = new FieldUserValue() { LookupId= creatorEmail.Id};
                                 CSOMlistItem["Editor"] = new FieldUserValue() { LookupId = creatorEmail.Id };
@@ -1104,7 +1128,7 @@ namespace FunctionApp3
                 throw;
             }
         }
-        public static async Task SaveLatestChangeTokenAsync(IChangeToken changeToken, string ressource, string blobconnection, string container, Microsoft.Extensions.Logging.ILogger _logger)
+        public  async Task SaveLatestChangeTokenAsync(IChangeToken changeToken, string ressource, string blobconnection, string container)
         {
             // Get a reference to the Azure Storage Container
             //string blobconnection = "AzureWebJobsStorage";
@@ -1143,7 +1167,7 @@ namespace FunctionApp3
             }
 
         }
-        public static string FormatEmails(string emailList, string prefix, Microsoft.Extensions.Logging.ILogger _logger)
+        public  string FormatEmails(string emailList, string prefix)
         {
             if (!string.IsNullOrEmpty(emailList))
             {
@@ -1158,7 +1182,7 @@ namespace FunctionApp3
             }
             else return string.Empty;
         }
-        public static string GetItemIdsBySiteTitles(ClientContext context, string listTitle, string values, string columnName, Microsoft.Extensions.Logging.ILogger _logger)
+        public string GetItemIdsBySiteTitles(ClientContext context, string listTitle, string values, string columnName)
         {
             //This helper method gets the id of an item in a list given a column value (column to be specified)
             if (string.IsNullOrEmpty(values))
@@ -1218,7 +1242,7 @@ namespace FunctionApp3
             catch { return string.Empty; }
         }
 
-        public static string GetPaysIDFromProjet(ClientContext context, string listTitle, int? ProjetID, Microsoft.Extensions.Logging.ILogger _logger)
+        public  string GetPaysIDFromProjet(ClientContext context, string listTitle, int? ProjetID)
         {
             //This helper method gets the id of an item in a list given a column value (column to be specified)
             if (string.IsNullOrEmpty(ProjetID.ToString()))
@@ -1244,7 +1268,7 @@ namespace FunctionApp3
             catch { return string.Empty; }
         }
 
-        public static async Task<string> GetLatestChangeTokenAsync(string ressource, string blobconnection, string container, Microsoft.Extensions.Logging.ILogger _logger)
+        public  async Task<string> GetLatestChangeTokenAsync(string ressource, string blobconnection, string container)
         {
             {
                 BlobContainerClient containerClient = new BlobContainerClient(blobconnection, container);
@@ -1283,30 +1307,7 @@ namespace FunctionApp3
             }
         }
 
-        public static void Mailer(ClientContext context, string mailSubjectTemplate, string mailBodyTemplate, string authorEmail, string siteTitle, string siteURL, float storagePercentageAllowed, Microsoft.Extensions.Logging.ILogger _logger)
-        {
-
-            var MailSubject = mailSubjectTemplate.Replace("[SITE]", siteTitle);
-            var MailBody = mailBodyTemplate.Replace("[PERCENTAGE]", storagePercentageAllowed.ToString() + "%").Replace("[SITE]", $"<a href='{siteURL}'>{siteTitle}</a>");
-            var emailProperties = new EmailProperties
-            {
-                To = new[] { authorEmail } ,
-                Subject = MailSubject,
-                Body = MailBody,
-            };
-
-            try { Utility.SendEmail(context, emailProperties); }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Email send unsuccessful");
-                Console.WriteLine(ex.Message);
-
-            }
-
-            Console.WriteLine("Email send successful");
-            System.Threading.Thread.Sleep(2000);
-        }
-        public static  void Mailer2(ClientContext context,PnPContext pnpcontext, dynamic groupedItems, dynamic singleItems, Microsoft.Extensions.Logging.ILogger _logger)
+        public void Mailer(ClientContext context,PnPContext pnpcontext, dynamic groupedItems, dynamic singleItems)
 
         {
            
@@ -1382,5 +1383,8 @@ namespace FunctionApp3
             }
         }
 
+        
+
+        
     }
 }
