@@ -1302,7 +1302,7 @@ try {copiedDocumentSetListItem.SystemUpdate();
 
                 // Download the blob content
                 var blobContent = await blobClient.DownloadContentAsync();
-                var blobContentString = blobContent.Value.Content.ToString();
+                var blobContentString = blobContent?.Value?.Content?.ToString();
                 return blobContentString;
             }
         }

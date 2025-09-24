@@ -79,7 +79,7 @@ public class FunctionAppSettingsSetup : IConfigureOptions<FunctionAppSettings>
     public void Configure(FunctionAppSettings options) {
         // Read DEPLOYMENT_ENV to choose between PPR and PROD (defaults to "PPR").
         string deploymentEnv = Environment.GetEnvironmentVariable("DEPLOYMENT_ENV") ?? "PPR";
-
+        Console.WriteLine(deploymentEnv);
         if (deploymentEnv.Equals("PROD", StringComparison.OrdinalIgnoreCase))
         {
             options.siteURL = _configuration["SharePoint_SiteUrl_GeostockPROD"]?.Trim().Replace("\"", "");

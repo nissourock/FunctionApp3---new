@@ -443,8 +443,8 @@ namespace FunctionApp3
                     List<dynamic?> results = new List<dynamic?>();
 
                     //Use this for faster testing 
-                    
-                     var result4 = await _services.DossierMaitreCreation(clientContext, pnpCoreContext,511, targetList, _settings.deploymentEnv);
+
+                    //    var result4 = await _services.DossierMaitreCreation(clientContext, pnpCoreContext,522, targetList, _settings.deploymentEnv);
 
 
 
@@ -485,7 +485,7 @@ namespace FunctionApp3
                     //        }
 
 
-
+                    _logger.LogInformation($"connected successfully");
 
                     var changeQuery = new ChangeQueryOptions(false, false)
                     {
@@ -499,6 +499,13 @@ namespace FunctionApp3
 
 
                     var lastChangeToken = await _services.GetLatestChangeTokenAsync(resourceId, _settings.AzureBlobStorageConnectionString, _settings.BlobContainerList);
+
+                    //var parts = lastChangeToken.Split(';');
+
+                    //var ticks = long.Parse(parts[3]);            // 638496224000000000
+                    //var utcDate = new DateTime(ticks, DateTimeKind.Utc);
+
+                    //_logger.LogInformation($"UTC Time: {utcDate:o}");
 
                     if (lastChangeToken != null && !String.IsNullOrEmpty(lastChangeToken))
                     {
